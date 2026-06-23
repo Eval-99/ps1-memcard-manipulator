@@ -43,6 +43,22 @@ func changeFileExtension(filename, newExt string) (string, error) {
 	return strings.ToLower(strings.Join(strSlice, ".")), nil
 }
 
+func updateChecksum(data []byte, offset int) {
+	var x byte = 0
+	for k := range 127 {
+		x ^= data[offset+k]
+	}
+	data[offset+127] = x
+}
+
+func verifyChecksum(data []byte, offset int) bool {
+	var x byte = 0
+	for k := range 127 {
+		x ^= data[offset+k]
+	}
+	return data[offset+127] == x
+}
+
 func main() {
 	filename := "somefile.exe"
 
