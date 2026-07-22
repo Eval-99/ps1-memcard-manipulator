@@ -50,7 +50,7 @@ func changeFileExtension(filename, newExt string) (string, error) {
 
 // --- Binary Parsing ---
 
-func updateChecksum(data []byte, offset int) {
+func updateChecksum(data [CARD_SIZE]byte, offset int) {
 	var x byte = 0
 	for k := range 127 {
 		x ^= data[offset+k]
@@ -58,7 +58,7 @@ func updateChecksum(data []byte, offset int) {
 	data[offset+127] = x
 }
 
-func verifyChecksum(data []byte, offset int) bool {
+func verifyChecksum(data [CARD_SIZE]byte, offset int) bool {
 	var x byte = 0
 	for k := range 127 {
 		x ^= data[offset+k]
@@ -66,7 +66,7 @@ func verifyChecksum(data []byte, offset int) bool {
 	return data[offset+127] == x
 }
 
-func parseString(data []byte, offset int, length int) string {
+func parseString(data [CARD_SIZE]byte, offset int, length int) string {
 	var s strings.Builder
 	for k := range length {
 		s.WriteString(string(data[offset+k]))
@@ -74,7 +74,7 @@ func parseString(data []byte, offset int, length int) string {
 	return s.String()
 }
 
-func parseShiftJIS(data []byte, offset int, length int) (string, error) {
+func parseShiftJIS(data [CARD_SIZE]byte, offset int, length int) (string, error) {
 	sub := data[offset : offset+length]
 	end := slices.Index(sub, 0)
 	if end >= 0 {
@@ -84,8 +84,101 @@ func parseShiftJIS(data []byte, offset int, length int) (string, error) {
 	return decoder.String(string(sub))
 }
 
+// --- Card Structure ---
+
+func getLinkedBlocks(data [CARD_SIZE]byte, startSlot int) []int {
+	slots := []int{startSlot}
+	currentSlot := startSlot
+
+	for range 15 {
+		entryOffset := DIR_FRAME_OFFSET + (currentSlot * 128)
+		linkVal := uint16(data[entryOffset+8]) | (uint16(data[entryOffset+9]) << 8)
+
+		if linkVal == 0xFFFF {
+			break
+		}
+		if linkVal >= 15 {
+			break
+		}
+		if slices.Contains(slots, int(linkVal)) {
+			break
+		}
+
+		slots = append(slots, int(linkVal))
+		currentSlot = int(linkVal)
+	}
+
+	return slots
+}
+
+func findFreeSlots(data [CARD_SIZE]byte, count int) []int {
+	freeSlots := []int{}
+
+	for i := range 15 {
+		status := data[DIR_FRAME_OFFSET+(i*128)]
+		if status == 0xA0 {
+			freeSlots = append(freeSlots, i)
+		}
+	}
+
+	if len(freeSlots) < count {
+		return nil
+	}
+
+	return freeSlots[0:count]
+}
+
+func slotHasData(data [CARD_SIZE]byte, slotIndex int) bool {
+	blockStart := (slotIndex + 1) * BLOCK_SIZE
+
+	for i := range 128 {
+		if data[blockStart+i] != 0 {
+			return true
+		}
+	}
+
+	return false
+}
+
+func countUsedBlocks(data [CARD_SIZE]byte) int {
+	used := 0
+
+	for i := range 15 {
+		status := data[DIR_FRAME_OFFSET+(i*128)]
+		if status == 0x51 || status == 0x52 || status == 0x53 {
+			used++
+		}
+	}
+
+	return used
+}
+
+func getSlotStatus(data [CARD_SIZE]byte, slotIndex int) byte {
+	return data[DIR_FRAME_OFFSET+(slotIndex*128)]
+}
+
+// --- Card Operations ---
+
+func createBlankCard() [CARD_SIZE]byte {
+	data := [CARD_SIZE]byte{}
+
+	data[0] = 0x4D // 'M'
+	data[1] = 0x43 // 'C'
+	data[127] = 0x0E
+
+	for i := range 15 {
+		off := DIR_FRAME_OFFSET + (i * 128)
+		data[off] = 0xA0
+		data[off+4] = 0
+		data[off+5] = 0
+		updateChecksum(data, off)
+	}
+
+	return data
+}
+
 func main() {
-	data := []byte{
+	data := [CARD_SIZE]byte{
 		130, 177,
 		130, 241,
 		130, 201,
