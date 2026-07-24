@@ -177,6 +177,49 @@ func createBlankCard() [CARD_SIZE]byte {
 	return data
 }
 
+func formatCardData(data [CARD_SIZE]byte) {
+	for i := range 15 {
+		entryOffset := DIR_FRAME_OFFSET + (i * 128)
+
+		for k := range 128 {
+			data[entryOffset+k] = 0
+		}
+
+		data[entryOffset] = 0xA0
+		updateChecksum(data, entryOffset)
+
+		blockStart := (i + 1) * BLOCK_SIZE
+		for k := range BLOCK_SIZE {
+			data[blockStart+k] = 0
+		}
+	}
+}
+
+func deleteSaveFromCard(data [CARD_SIZE]byte, slotIndex int) {
+	linkedSlots := getLinkedBlocks(data, slotIndex)
+	for _, slot := range linkedSlots {
+		off := DIR_FRAME_OFFSET + (slot * 128)
+		data[off] = 0xA0
+		updateChecksum(data, off)
+
+	}
+}
+
+func undeleteSaveOnCard(data [CARD_SIZE]byte, slotIndex int) {
+	linkedSlots := getLinkedBlocks(data, slotIndex)
+	for i := range len(linkedSlots) {
+		entryOffset := DIR_FRAME_OFFSET + (linkedSlots[i] * 128)
+		if i == 0 {
+			data[entryOffset] = 0x51
+		} else if i < len(linkedSlots)-1 {
+			data[entryOffset] = 0x52
+		} else {
+			data[entryOffset] = 0x53
+		}
+		updateChecksum(data, entryOffset)
+	}
+}
+
 func main() {
 	data := [CARD_SIZE]byte{
 		130, 177,
